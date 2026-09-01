@@ -10,7 +10,7 @@ Two live events. **5–6 Sep online evaluation** (no modifications permitted) an
 ### Before 4 Sep 23:59 IST (submission deadline)
 
 - [x] Prototype deployed and publicly reachable — **not localhost** — see [docs/09-deployment.md](09-deployment.md)
-- [x] Repo public, README complete — [github.com/coder-irwin/echosphere-ps5-voice-support](https://github.com/coder-irwin/echosphere-ps5-voice-support). Architecture diagram still not committed as an image.
+- [x] Repo public, README complete, architecture diagram committed — [github.com/coder-irwin/echosphere-ps5-voice-support](https://github.com/coder-irwin/echosphere-ps5-voice-support), diagram in [docs/02-architecture.md](02-architecture.md)
 - [ ] 3–5 minute demo video recorded and uploaded
 - [x] Technologies list and known-limitations doc in the repo — [docs/09-deployment.md](09-deployment.md)
 - [x] `.env.example` complete; no real secrets committed

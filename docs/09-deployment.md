@@ -124,7 +124,8 @@ the single most common failure — it's a one-liner for a reason.
 
 ## Known limitations
 
-- No CI/CD — deploys are manual (`gcloud run deploy --source .`).
+- CI runs the test suite on every push/PR (`.github/workflows/tests.yml`), but there's no
+  CD — deploys stay manual (`gcloud run deploy --source .`).
 - No auth on the service — `--allow-unauthenticated` is intentional for a hackathon demo
   that judges need to reach without credentials, but it means `/admin/reset` and the
   `/calls/*` control endpoints are open to anyone with the URL. Fine for a demo window;

@@ -209,9 +209,58 @@ and a real SaaS integration reads far better under questioning.
 | Model | Gemini Live (`gemini-3.1-flash-live-preview`) | Fallback: Gemini via custom LLM endpoint |
 | Backend | Python + **FastAPI** | Async + WebSockets; ShopWave's own roadmap called for this |
 | Models | Pydantic | Carried over from ShopWave unchanged |
-| Frontend | React + Agora Web SDK | Three surfaces: caller, console, panel |
+| Frontend | React + Agora Web SDK (planned) | Three surfaces: caller, console, panel. The text-chat demo UI live today is a single inline page served by `app/main.py`, not React — it exists to make the brain judge-reachable before the full caller/console/panel frontend is built |
 | Ticketing | Zendesk / Freshdesk sandbox | Real integration |
-| Deploy | Render / Railway / Fly | **Must be publicly reachable** — 5–6 Sep eval is live |
+| Deploy | **GCP Cloud Run** | Live and publicly reachable — see [docs/09-deployment.md](09-deployment.md) |
+
+---
+
+## Deployed system diagram (1 Sep 2026)
+
+What's actually running today, as opposed to the planned end-state above. Cascade mode
+(bottom path) is the deployed default; MLLM (top path) is unverified until real Agora
+credentials are wired in — see R1 in [docs/04-risks-and-open-questions.md](04-risks-and-open-questions.md).
+
+```mermaid
+flowchart TB
+    subgraph Client["Caller"]
+        Browser["Browser — text-chat demo UI<br/>(served at '/')"]
+        WebRTC["Agora Web SDK client<br/>(voice, not yet built)"]
+    end
+
+    subgraph Agora["Agora Conversational AI Engine"]
+        MLLM["MLLM mode<br/>Gemini Live speech-to-speech<br/>(R1 — unverified)"]
+        Cascade["Cascade mode<br/>ASR → custom LLM → TTS<br/>(deployed default)"]
+    end
+
+    subgraph CloudRun["GCP Cloud Run — shopwave-ps5 (asia-south1)"]
+        Main["app/main.py — FastAPI"]
+        Orch["app/core/orchestrator.py<br/>Gemini tool-call loop"]
+        Session["app/core/session.py — CallSession<br/>slots · confidence gate · guardrails<br/>policy engine · escalation · audit"]
+        Tools["app/tools — ecommerce · ticketing<br/>tool registry"]
+        Panel["WebSocket panel feed<br/>/ws/{session_id}"]
+    end
+
+    Gemini["Gemini API<br/>(generateContent, text)"]
+    Store["In-memory DataStore<br/>orders · customers · products"]
+
+    Browser -->|"POST /sessions/{id}/message"| Main
+    WebRTC -->|"audio, mic"| MLLM
+    MLLM -->|"tool call (unverified)"| Main
+    Cascade -->|"POST /agora/llm/{channel}/v1/chat/completions"| Main
+    Main --> Orch
+    Orch -->|"propose_action()"| Session
+    Orch -->|"generate()"| Gemini
+    Session -->|"adjudicated calls only"| Tools
+    Tools --> Store
+    Session -->|"audit events"| Panel
+    Panel -->|"live snapshot"| Browser
+```
+
+Where this diverges from the target-state diagram above: no React frontend or human-agent
+console yet (escalation/interpreter-mode endpoints exist in `app/main.py` and are tested,
+but nothing calls them from a UI), and ticketing is `app/tools/ticketing.py`'s sandbox
+implementation rather than a real Zendesk/Freshdesk integration.
 
 ---
 
