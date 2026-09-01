@@ -6,6 +6,15 @@ Ranked by how badly they hurt. Each has a de-risking action and a deadline.
 
 ## R1 — Function calling in Gemini Live MLLM mode is undocumented
 
+**Status (1 Sep 2026):** still unverified against the live API — this requires a real
+Agora App ID/Certificate and Gemini key, which weren't available when this risk was
+written. The mitigation is no longer just designed for; it is **built and deployed**: the
+cascade path (`AGENT_MODE=cascade`) runs today at the production URL in
+[docs/09-deployment.md](09-deployment.md), served by `app/main.py`'s
+`/agora/llm/{channel}/v1/chat/completions` webhook and `app/core/orchestrator.py`. Once
+real credentials are wired in, do the MLLM spike; if it fails, cascade is already the
+default and needs no code change to fall back to.
+
 **Severity:** critical. Sinks the primary architecture path.
 
 Agora's Gemini Live docs cover `vendor`, `model`, `instructions`, `voice`,
@@ -28,9 +37,14 @@ ShopWave Core is transport-agnostic and the adapter is ~200 lines.
 
 ---
 
-## R2 — The reuse rule
+## R2 — The reuse rule — RESOLVED (1 Sep 2026)
 
-**Severity:** critical. Potential disqualification.
+**Status:** resolved. Organisers confirmed offline that reusing Akaash's own prior
+ShopWave engine, re-domained and combined with an entirely new real-time conversational
+layer, is acceptable. Logged here per the "document every iteration" rule rather than
+silently dropped — see [docs/01-decision-log.md](01-decision-log.md).
+
+**Severity (pre-resolution):** critical. Potential disqualification.
 
 The FAQ lists as a disqualifier: *"The project is copied without significant modification."*
 This is your own prior work rather than someone else's — materially different — but it is a

@@ -21,10 +21,21 @@ transferred into a void, and never gets told a confident lie.
 | Concept + demo spine | Approved |
 | Architecture | Approved |
 | Case coverage map | Approved |
-| Demo script & eval-day plan | Not started |
-| Design spec written | In progress |
-| Implementation plan | Not started |
-| Build | Not started |
+| Demo script & eval-day plan | Done — [docs/07-demo-script.md](docs/07-demo-script.md), [docs/08-runbook.md](docs/08-runbook.md) |
+| Design spec written | Done — [docs/superpowers/specs/](docs/superpowers/specs/) |
+| Core brain (policy, slots, guardrails, escalation, audit) | Done — 69 tests passing |
+| HTTP/WebSocket service layer + cascade LLM orchestrator | Done — [docs/09-deployment.md](docs/09-deployment.md) |
+| Public repo, Docker, live deployment | Done — see **Live demo** below |
+| Real Agora/Gemini credentials wired in | In progress |
+
+## Live demo
+
+Deployed on GCP Cloud Run: **https://shopwave-ps5-855952895014.asia-south1.run.app**
+
+Open it and start typing — the text-chat UI drives the real policy-adjudicated brain (intent
+classification, the confirmation ladder, policy blocks, escalation, full audit trail) live in
+the transparency panel, no Agora account required. Voice, over a real Agora channel, comes
+online once `AGORA_*` and `GEMINI_API_KEY` are set — see [docs/09-deployment.md](docs/09-deployment.md).
 
 ## Document index
 
@@ -37,6 +48,9 @@ transferred into a void, and never gets told a confident lie.
 | [docs/04-risks-and-open-questions.md](docs/04-risks-and-open-questions.md) | Ranked risks, unknowns, de-risking actions with owners. |
 | [docs/05-judge-qa.md](docs/05-judge-qa.md) | Anticipated judge questions with prepared answers. |
 | [docs/06-research-notes.md](docs/06-research-notes.md) | Verified external facts with sources. |
+| [docs/07-demo-script.md](docs/07-demo-script.md) | The scripted demo flow. |
+| [docs/08-runbook.md](docs/08-runbook.md) | Evaluation-day and finale operational checklist. |
+| [docs/09-deployment.md](docs/09-deployment.md) | How to run this locally, in Docker, and how it's deployed on GCP Cloud Run. |
 | [docs/superpowers/specs/](docs/superpowers/specs/) | Formal design spec. |
 
 ## Key dates (2026)
