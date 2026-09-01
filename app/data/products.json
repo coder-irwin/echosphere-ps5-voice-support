@@ -1,0 +1,62 @@
+[
+  {
+    "product_id": "P201",
+    "name": "MixPro 900W Blender",
+    "category": "kitchen_appliances",
+    "price": 18400.0,
+    "warranty_months": 24,
+    "return_window_days": 30,
+    "returnable": true,
+    "notes": "Return accepted for transit damage without restocking fee."
+  },
+  {
+    "product_id": "P202",
+    "name": "AquaFine Steel Water Bottle",
+    "category": "kitchen_accessories",
+    "price": 1299.0,
+    "warranty_months": 6,
+    "return_window_days": 30,
+    "returnable": true,
+    "notes": "Low value. Auto-refundable within window."
+  },
+  {
+    "product_id": "P203",
+    "name": "SoundOrbit Wireless Earbuds",
+    "category": "electronics",
+    "price": 6499.0,
+    "warranty_months": 12,
+    "return_window_days": 15,
+    "returnable": true,
+    "notes": "Short return window. Seal must be intact unless defective."
+  },
+  {
+    "product_id": "P204",
+    "name": "PureCotton Innerwear Pack",
+    "category": "apparel_hygiene",
+    "price": 899.0,
+    "warranty_months": 0,
+    "return_window_days": 0,
+    "returnable": false,
+    "notes": "Non-returnable for hygiene reasons."
+  },
+  {
+    "product_id": "P205",
+    "name": "TrailGrip Running Shoes",
+    "category": "footwear",
+    "price": 4299.0,
+    "warranty_months": 6,
+    "return_window_days": 30,
+    "returnable": true,
+    "notes": "Size exchanges common."
+  },
+  {
+    "product_id": "P206",
+    "name": "LumenDesk LED Lamp",
+    "category": "home",
+    "price": 2450.0,
+    "warranty_months": 12,
+    "return_window_days": 30,
+    "returnable": true,
+    "notes": "Frequently reported as delivered-but-missing in apartment complexes."
+  }
+]

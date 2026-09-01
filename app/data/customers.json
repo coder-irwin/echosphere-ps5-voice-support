@@ -1,0 +1,92 @@
+[
+  {
+    "customer_id": "C101",
+    "name": "Priya Sharma",
+    "email": "priya.sharma@email.com",
+    "phone": "+91-98100-44711",
+    "tier": "standard",
+    "member_since": "2022-07-19",
+    "total_orders": 14,
+    "total_spent": 62400.0,
+    "risk_level": "low",
+    "address": {
+      "street": "B-14 Vasant Kunj",
+      "city": "New Delhi",
+      "state": "DL",
+      "zip": "110070"
+    },
+    "notes": "No prior refunds. Primary demo caller."
+  },
+  {
+    "customer_id": "C102",
+    "name": "Rakesh Iyer",
+    "email": "rakesh.iyer@email.com",
+    "phone": "+91-98450-22102",
+    "tier": "vip",
+    "member_since": "2018-01-05",
+    "total_orders": 96,
+    "total_spent": 418900.0,
+    "risk_level": "low",
+    "address": {
+      "street": "42 Indiranagar 12th Main",
+      "city": "Bengaluru",
+      "state": "KA",
+      "zip": "560038"
+    },
+    "notes": "Long-standing VIP. Return-window leniency applies."
+  },
+  {
+    "customer_id": "C103",
+    "name": "Ananya Das",
+    "email": "ananya.das@email.com",
+    "phone": "+91-98300-77103",
+    "tier": "premium",
+    "member_since": "2021-11-02",
+    "total_orders": 31,
+    "total_spent": 129400.0,
+    "risk_level": "low",
+    "address": {
+      "street": "7 Salt Lake Sector V",
+      "city": "Kolkata",
+      "state": "WB",
+      "zip": "700091"
+    },
+    "notes": "Frequent exchanges, no disputes."
+  },
+  {
+    "customer_id": "C104",
+    "name": "Imran Qureshi",
+    "email": "imran.qureshi@email.com",
+    "phone": "+91-98200-55104",
+    "tier": "standard",
+    "member_since": "2024-01-28",
+    "total_orders": 2,
+    "total_spent": 8300.0,
+    "risk_level": "high",
+    "address": {
+      "street": "301 Andheri West",
+      "city": "Mumbai",
+      "state": "MH",
+      "zip": "400053"
+    },
+    "notes": "New account, two disputed transactions flagged by payments."
+  },
+  {
+    "customer_id": "C105",
+    "name": "Gurpreet Kaur",
+    "email": "gurpreet.kaur@email.com",
+    "phone": "+91-98760-33105",
+    "tier": "standard",
+    "member_since": "2023-04-14",
+    "total_orders": 9,
+    "total_spent": 21750.0,
+    "risk_level": "low",
+    "address": {
+      "street": "56 Sector 17",
+      "city": "Chandigarh",
+      "state": "CH",
+      "zip": "160017"
+    },
+    "notes": "Prefers Punjabi/Hindi. Useful for multilingual testing."
+  }
+]

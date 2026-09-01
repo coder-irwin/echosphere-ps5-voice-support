@@ -1,0 +1,156 @@
+# Decision log
+
+Every decision, the alternatives considered, and the reasoning. Newest session at the bottom.
+This is the doc to read before a mentor call or a jury Q&A — it holds the *why*.
+
+---
+
+## Session 1 — 9 Aug 2026
+
+### D1. Problem statement: PS5 (multilingual support line)
+
+**Decision:** PS5 — real-time multilingual voice AI for a customer assistance line.
+
+**Alternatives considered and rejected:**
+
+| Option | Why not |
+|---|---|
+| PS1 — interview panel | Strongest demo mechanics (multi-agent, judge can sit in the candidate chair) but AI interviewing is a crowded category, and "human escalation" doesn't fit naturally. |
+| PS2 — sales agent | Most crowded pick in the field. 1:1 call — Agora becomes an implementation detail rather than load-bearing. |
+| PS3 — classroom co-teacher | The impressive engineering is *restraint* (knowing when not to speak), which is hard to build and harder to make legible to a jury in five minutes. |
+| PS4 — incident commander | Best enterprise pitch and least crowded, but the agent mostly listens — risks demoing as a transcription tool. Live multi-human demo has more failure modes. |
+| Open Innovation | **Not available.** FAQ explicitly forbids own problem statements. |
+
+**Note on the original analysis:** the initial recommendation was PS1, on the grounds that
+PS2/PS5 are 1:1 calls that a phone-tree vendor could replicate, making Agora decorative.
+That objection is real and PS5 must actively answer it — see D5 (warm escalation), which is
+the specific design move that makes Agora structurally necessary.
+
+### D2. Domain: e-commerce customer assistance
+
+**Decision:** e-commerce support (refunds, returns, delivery, warranty).
+
+PS5 permits "customer assistance, public information or non-clinical support" — e-commerce
+customer assistance qualifies under the first.
+
+**Alternatives explored (India-focused, then global):**
+
+- Cyber-fraud intake (1930-style) — golden-hour clock, digits-over-noise confirmation
+- Railway/station assistance (RailMadad-style) — natural platform noise
+- Kisan farmer helpline — 22 languages, but fuzzy information collection
+- Migrant worker wage-theft intake — high impact, language mismatch intrinsic
+- Welfare scheme eligibility navigator — huge reach, high "uncertain info as fact" risk
+- Gig worker grievance line — most startup-shaped
+- Aid access line for displaced people — 117.8M displaced, UNHCR down a third of staff
+- Family tracing / reunification — cross-script phonetic name matching, highest novelty
+
+**Why e-commerce won:** it reuses the ShopWave engine's existing domain model (orders,
+customers, products, refund policy) with no re-domaining cost, and the team chose to make
+**user experience** the differentiator rather than cause impact. The pitch becomes
+*"the least frustrating support call you've ever been on"* rather than a humanitarian story.
+
+**Known trade-off, stated openly:** e-commerce refunds is the weakest impact narrative of
+all options examined. The compensating strength must be UX depth and the guardrail engine.
+
+### D3. Reuse ShopWave — keep the engine
+
+**Decision:** retain ShopWave's policy/audit/tool substrate; build the entire real-time
+conversational layer new.
+
+**What ShopWave contributes:**
+- Policy engine (return windows, tier overrides, value thresholds)
+- Idempotency checks (no duplicate refunds)
+- Fraud / social-engineering detection
+- Structured escalation payloads
+- Forensic audit logging
+- Tool set: `get_order`, `get_customer`, `get_product`, `check_refund_eligibility`,
+  `issue_refund`, `send_reply`, `search_knowledge_base`, `escalate`
+- Rule engine (O(1) keyword classification) + LLM fallback — this is what makes broad
+  intent coverage cheap
+
+**What ShopWave does NOT contribute** — roughly 7 of PS5's 10 requirements are new work:
+multilingual/code-switched speech, interruption handling, noise resilience, the
+confirmation ladder, low-confidence detection, prioritized question flow, real-time
+turn-taking. ShopWave is batch, text and asynchronous. PS5 is real-time, voice and
+conversational.
+
+**Alternatives rejected:**
+- *Ship ShopWave with a voice front-end* — this is precisely the "only a voice-enabled
+  chatbot" disqualifier. Rejected.
+- *Start completely fresh* — throws away the one thing that is genuinely hard to fake in
+  six days (a real enforcement layer rather than a system prompt).
+
+**Open risk:** see R2 in [04-risks-and-open-questions.md](04-risks-and-open-questions.md) —
+organiser confirmation needed that building on your own prior repo is acceptable under the
+"copied without significant modification" rule.
+
+### D4. Surfaces: build all three
+
+**Decision:** caller voice experience + human agent console + live transparency panel.
+
+The transparency panel is the highest-leverage surface. Low-confidence detection, policy
+enforcement and audit trails are invisible in a voice-only demo — the panel converts them
+into something the judges watch happen in real time, and therefore something scoreable.
+
+### D5. Warm escalation — the AI stays in the room
+
+**Decision:** escalation is an *addition*, not a transfer. The human agent joins the same
+Agora channel; the AI remains as interpreter and copilot.
+
+This is the single design move that makes Agora structurally necessary rather than
+decorative. Three parties in one continuous audio room with live interpretation between two
+humans who don't share a language is not achievable on a phone-tree stack. It also converts
+PS5's requirement 8 ("human escalation with context preservation") from a checkbox into the
+most impressive moment in the demo.
+
+Implementation: Agora's *update agent configuration* REST endpoint switches the agent to
+interpreter mode live, mid-call.
+
+### D6. Languages: whatever Gemini Live covers
+
+**Decision:** rely on Gemini Live's native multilingual speech-to-speech (70+ languages for
+voice-to-voice) rather than picking a fixed language pair.
+
+Demo centrepiece should still be **Hindi/English code-switching** — it is the most realistic
+code-switching in the world and a Delhi jury can personally verify it works. Other languages
+become the "and it generalises" claim.
+
+### D7. Transport: MLLM primary, cascade fallback, brain transport-agnostic
+
+**Decision:** ShopWave Core exposes one internal decision API. Two thin adapters sit in
+front of it.
+
+| Path | Config | Pros | Cons |
+|---|---|---|---|
+| **MLLM (primary)** | `mllm.vendor: "gemini"`, `gemini-3.1-flash-live-preview` | Native speech-to-speech. Far better code-switching, interruption, prosody. Sub-second. | **Function calling undocumented through Agora.** No explicit ASR confidence score. |
+| **Cascade (fallback)** | `asr` → `llm.vendor: "custom"` → `tts` | Function calling fully documented. `turn_id` metadata. Total control. ShopWave *is* the LLM. | Serial latency. Less natural prosody. Mid-sentence Hinglish is hard for chained ASR. |
+
+Ship MLLM if the tool-calling test passes; cascade if it doesn't. ~200 lines of adapter as
+insurance against the one unknown that could sink the build. See R1.
+
+### D8. Breadth vs depth in case coverage
+
+**Decision:** wide *routing* surface, deep *resolution* on a chosen set. Three tiers —
+5 hero flows, 9 lighter flows, 9 recognised-and-routed. Cross-cutting conversational
+behaviours are prioritised over intent count.
+
+Rationale: a team demoing thirty shallow intents loses to a team demoing five flows that
+survive interruption, correction, topic-switching and code-switching.
+
+**Cut list if behind schedule:** drop Tier 2 bottom-up (invoice → subscription → promo code
+→ warranty). **Never cut a cross-cutting behaviour to save an intent.**
+
+### D9. Stack: FastAPI, not Flask
+
+**Decision:** port ShopWave's Flask dashboard to FastAPI.
+
+Needed for async and WebSockets. ShopWave's own "future improvements" already called for
+moving off AJAX polling. Pydantic models carry over unchanged.
+
+---
+
+## Running log
+
+| Date | Session outcome |
+|---|---|
+| 9 Aug 2026 | PS5 selected, e-commerce domain locked, ShopWave reuse strategy set, concept + architecture + coverage map approved. Doc set created. |
