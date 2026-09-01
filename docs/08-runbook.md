@@ -14,7 +14,7 @@ Two live events. **5–6 Sep online evaluation** (no modifications permitted) an
 - [ ] 3–5 minute demo video recorded and uploaded
 - [x] Technologies list and known-limitations doc in the repo — [docs/09-deployment.md](09-deployment.md)
 - [x] `.env.example` complete; no real secrets committed
-- [ ] Smoke test from a **different network** than the dev machine
+- [x] Smoke test from a **different network** than the dev machine — health, session, message, and the `wss://` transparency panel all verified live against the Cloud Run URL
 - [ ] Tag the submission commit — after this, no changes are permitted
 
 ### Morning of a live demo
