@@ -174,6 +174,33 @@ for every judge doing an unattended review. The text path exercises the actual b
 audit trail) with nothing but a browser tab, so the core IP is inspectable by anyone with
 the URL, voice or not.
 
+### D12. `/call` — one page, two roles, no separate console
+
+**Decision:** the real-time voice client at `/call` lets the same page act as either the
+caller or the human agent, picked by a role selector, rather than building a separate
+console application.
+
+The demo script needs a caller and a console operator on different screens; it doesn't need
+different *code*. A human agent picking "Human agent" and entering the channel name joins
+the same Agora RTC channel with a different uid and immediately calls the escalation
+endpoint — same backend path a real console would use. One deployable artifact instead of
+two, for a hackathon timeline where every extra surface is a UI to test.
+
+### D13. Human override is a distinct method, not a flag on `propose_action`
+
+**Decision:** `CallSession.human_override()` is a new method, not `propose_action(action,
+override=True)`.
+
+`propose_action` is the model's only path to acting, and it's exercised by every existing
+test and by the orchestrator's tool loop — the model calls it, unmediated. Threading an
+override flag through that same method risks the model ever supplying `override=True`
+itself if a caller ever exposed it, which would defeat the entire point of enforcing policy
+in code rather than in a prompt. A separate method with its own `human_present` gate can
+only be reached from `POST /calls/{channel}/approve`, which nothing but a human clicking
+"Approve" in `/call` ever calls. Slot-backing (`_unbacked_args`) still applies unconditionally
+— a human approving an action never grants permission to act on a value the caller didn't
+confirm.
+
 ---
 
 ## Running log
@@ -182,3 +209,4 @@ the URL, voice or not.
 |---|---|
 | 9 Aug 2026 | PS5 selected, e-commerce domain locked, ShopWave reuse strategy set, concept + architecture + coverage map approved. Doc set created. |
 | 1 Sep 2026 | Organisers confirmed the ShopWave reuse rule (R2) is acceptable — resolved, see [docs/04-risks-and-open-questions.md](04-risks-and-open-questions.md). Built the missing service layer end to end: FastAPI app (`app/main.py`), cascade LLM orchestrator (`app/core/orchestrator.py`, D10/D11), Docker image, 10 new tests (69 total, all passing with zero credentials configured). Published the repo publicly at [github.com/coder-irwin/echosphere-ps5-voice-support](https://github.com/coder-irwin/echosphere-ps5-voice-support), added Vedansh (theDeviser) as a collaborator. Stood up a dedicated GCP project (`echosphere-ps5-hackathon`) and deployed to Cloud Run — live at the URL in the README. Real Agora/Gemini credentials still pending from the team; R1 (MLLM tool-calling) remains unverified until they're wired in, cascade mode is the deployed default in the meantime. |
+| 4 Sep 2026 | Built the real-time voice call browser client at `/call` (D12) — Agora Web SDK, caller and human-agent roles both joinable from the same page, wired to the actual escalation/interpreter-mode endpoints. While preparing against the demo script (docs/07-demo-script.md) found that the script's 3:30 beat — "operator approves in the console, `issue_refund` executes" — had **no corresponding code path**: `human_present` didn't grant any override of a policy block. Added `CallSession.human_override` (D13) and `POST /calls/{channel}/approve` to close that gap; still fully enforces slot-backing, only bypasses the policy block, and only when a human has actually joined. 76 tests passing. Vedansh's collaborator invite accepted. Still blocked on real Agora/Gemini credentials. |

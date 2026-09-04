@@ -53,6 +53,26 @@ def test_calls_start_without_agora_configured_reports_not_configured():
     assert data["agora"]["error"] == "agora_not_configured"
 
 
+def test_approve_on_unknown_channel_is_404():
+    res = client.post(
+        "/calls/no-such-channel/approve",
+        json={"tool": "issue_refund", "args": {"order_id": "ORD-4471", "amount": 100}},
+    )
+    assert res.status_code == 404
+
+
+def test_approve_without_human_present_is_refused():
+    client.post("/calls/start", json={"channel": "test-channel-approve"})
+    res = client.post(
+        "/calls/test-channel-approve/approve",
+        json={"tool": "issue_refund", "args": {"order_id": "ORD-4471", "amount": 18400}},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["outcome"]["executed"] is False
+    assert data["outcome"]["policy"]["rule"] == "override_requires_human_present"
+
+
 def test_token_endpoint_without_agora_configured():
     res = client.get("/token", params={"channel": "demo", "uid": 0})
     assert res.status_code == 200

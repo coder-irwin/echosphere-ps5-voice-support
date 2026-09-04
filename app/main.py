@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from app.adapters.agora import AgoraConfig, AgoraConvoAI, build_rtc_token
 from app.adapters.llm import GeminiClient
 from app.api.state import registry
+from app.core.models import ProposedAction
 from app.core.orchestrator import run_turn
 from app.core.session import DISCLOSURE
 from app.factory import get_store
@@ -173,6 +174,25 @@ async def escalate_call(channel: str, agent_name: str = "human agent") -> dict[s
         agora_result = await AgoraConvoAI().update_agent(agent_id, instruction)
 
     return {"brief": brief, "agora": agora_result, "snapshot": session.snapshot()}
+
+
+class ApproveIn(BaseModel):
+    tool: str
+    args: dict[str, Any] = {}
+    approved_by: str = "human agent"
+
+
+@app.post("/calls/{channel}/approve")
+async def approve_action(channel: str, body: ApproveIn) -> dict[str, Any]:
+    """A human agent approves an action the policy engine blocked. See CallSession.human_override."""
+    session = registry.get(channel)
+    if session is None:
+        raise HTTPException(404, "unknown session")
+    outcome = await session.human_override(
+        ProposedAction(tool=body.tool, args=body.args, intent=session.intent),
+        approved_by=body.approved_by,
+    )
+    return {"outcome": outcome.model_dump(), "snapshot": session.snapshot()}
 
 
 @app.get("/token")
@@ -372,6 +392,17 @@ _CALL_HTML = """<!doctype html>
     <button id="endBtn" class="danger" disabled>End call</button>
 
     <div id="status"><span class="dot"></span>not connected</div>
+
+    <label>Approve a blocked action (human agent)</label>
+    <select id="approveTool">
+      <option value="issue_refund">issue_refund</option>
+      <option value="create_replacement">create_replacement</option>
+      <option value="cancel_order">cancel_order</option>
+      <option value="update_address">update_address</option>
+    </select>
+    <input id="approveOrderId" placeholder="order_id, e.g. ORD-4471" style="margin-top: 8px;" />
+    <input id="approveAmount" placeholder="amount (for issue_refund), e.g. 18400" style="margin-top: 8px;" />
+    <button id="approveBtn" class="secondary" disabled>Approve &amp; execute</button>
   </section>
   <section>
     <h2>Transparency panel (live audit state)</h2>
@@ -384,6 +415,7 @@ let client = null, localTrack = null, ws = null, currentChannel = null;
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status'), bannerEl = $('banner'), panelEl = $('panel');
 const joinBtn = $('joinBtn'), escalateBtn = $('escalateBtn'), endBtn = $('endBtn'), roleSel = $('role');
+const approveBtn = $('approveBtn');
 
 function setStatus(text, kind) {
   statusEl.innerHTML = `<span class="dot ${kind || ''}"></span>${text}`;
@@ -459,6 +491,7 @@ async function startAsCaller() {
   joinBtn.disabled = true;
   escalateBtn.disabled = false;
   endBtn.disabled = false;
+  approveBtn.disabled = false;
 }
 
 async function joinAsAgent() {
@@ -492,6 +525,7 @@ async function joinAsAgent() {
   joinBtn.disabled = true;
   escalateBtn.disabled = true;
   endBtn.disabled = false;
+  approveBtn.disabled = false;
 }
 
 joinBtn.addEventListener('click', () => {
@@ -510,6 +544,31 @@ escalateBtn.addEventListener('click', async () => {
   banner(data.brief ? ('Escalated. Briefed: ' + data.brief) : 'Escalated.');
 });
 
+approveBtn.addEventListener('click', async () => {
+  if (!currentChannel) return;
+  const tool = $('approveTool').value;
+  const orderId = $('approveOrderId').value.trim();
+  const amount = $('approveAmount').value.trim();
+  const args = {};
+  if (orderId) args.order_id = orderId;
+  if (tool === 'issue_refund' && amount) args.amount = parseFloat(amount);
+  if (tool === 'update_address') args.new_address = amount || '';
+
+  const res = await fetch(`/calls/${encodeURIComponent(currentChannel)}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool, args, approved_by: 'Human agent (console)' }),
+  });
+  const data = await res.json();
+  const outcome = data.outcome || {};
+  if (outcome.executed) {
+    banner('Approved and executed: ' + JSON.stringify(outcome.result));
+  } else {
+    banner('Not executed — ' + (outcome.spoken_reason || (outcome.policy && outcome.policy.rule) || 'blocked'));
+  }
+  if (data.snapshot) panelEl.textContent = JSON.stringify(data.snapshot, null, 2);
+});
+
 endBtn.addEventListener('click', async () => {
   endBtn.disabled = true;
   await leaveRtc();
@@ -518,6 +577,7 @@ endBtn.addEventListener('click', async () => {
   setStatus('call ended');
   joinBtn.disabled = false;
   escalateBtn.disabled = true;
+  approveBtn.disabled = true;
   panelEl.textContent = 'start a call to connect…';
 });
 </script>

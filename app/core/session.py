@@ -302,6 +302,61 @@ class CallSession:
             policy=verdict, latency_ms=latency,
         )
 
+    async def human_override(self, action: ProposedAction, approved_by: str) -> ActionOutcome:
+        """A human agent, already on the call, approves an action the policy engine blocked.
+
+        The policy engine's decision is never silently bypassed by the model — only a human
+        who has actually joined the call can do this, and every override is its own audit
+        event naming who approved it. Slot-backing still applies: a human approving the
+        action does not make it acceptable to act on a value the caller never confirmed.
+        """
+        started = time.perf_counter()
+        policy_action = TOOL_ACTION.get(action.tool, "status_reply")
+
+        if not self.human_present:
+            verdict = PolicyVerdict(
+                action=policy_action, allowed=False, rule="override_requires_human_present",
+                reasons=["a human agent must have joined the call to approve an override"],
+            )
+            return self._blocked(action, verdict, started, spoken=(
+                "I can't do that without a human colleague on the line to approve it."
+            ))
+
+        self.attempted_actions.append(action.tool)
+        unbacked = self._unbacked_args(action)
+        if unbacked:
+            verdict = PolicyVerdict(
+                action=policy_action, allowed=False, rule="unconfirmed_slot",
+                reasons=[f"{', '.join(unbacked)} not confirmed by the caller"],
+            )
+            return self._blocked(action, verdict, started, spoken=(
+                "I want to make sure I have that right before I do anything — "
+                "let me confirm it with you first."
+            ))
+
+        verdict = PolicyVerdict(
+            action=policy_action, allowed=True,
+            reasons=[f"human override approved by {approved_by}"], risk="human_approved",
+        )
+        self.audit.record(
+            Kind.HUMAN_OVERRIDE, self._turn_seq,
+            tool=action.tool, args=action.args, approved_by=approved_by,
+        )
+
+        result = await self._execute(action.tool, action.args)
+        latency = int((time.perf_counter() - started) * 1000)
+        self.audit.record(
+            Kind.TOOL_RESULT, self._turn_seq,
+            tool=action.tool, result=result, latency_ms=latency, executed=True,
+            override_by=approved_by,
+        )
+        self._absorb_result(action.tool, result)
+
+        return ActionOutcome(
+            tool=action.tool, executed=True, result=result,
+            policy=verdict, latency_ms=latency,
+        )
+
     def _unbacked_args(self, action: ProposedAction) -> list[str]:
         if TOOL_ACTION.get(action.tool) not in {
             "refund", "replacement", "cancel", "update_address", "update_subscription"

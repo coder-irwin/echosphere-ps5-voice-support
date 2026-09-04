@@ -100,5 +100,6 @@ class Kind:
     ESCALATION = "escalation"
     HUMAN_JOINED = "human_joined"
     INTERPRETER_MODE = "interpreter_mode"
+    HUMAN_OVERRIDE = "human_override"
     TICKET_CREATED = "ticket_created"
     SESSION_CLOSE = "session_close"

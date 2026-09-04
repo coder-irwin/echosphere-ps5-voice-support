@@ -12,7 +12,7 @@ Used for: the 3–5 minute demo video, the 5–6 Sep online evaluation, and the 
 | Role | Who does what |
 |---|---|
 | **Caller** | Plays Priya. Speaks Hindi and English, delivers the interruption and the correction on cue. |
-| **Console operator** | The human support agent. Watches the console, joins the call, approves the refund. |
+| **Console operator** | The human support agent. Has `/call` open (role: Human agent), joins the call, approves the refund. |
 | **Narrator** | Talks over the transparency panel. Never explains what the *agent* is doing — explains what the *panel* is showing. |
 | **Ops** | Watches logs, holds the restart procedure, manages the backup recording. Silent unless something breaks. |
 
@@ -45,10 +45,10 @@ product; the panel is the evidence.
 | **2:05** | Agent runs `check_refund_eligibility` → eligible, within window. Proposes refund. **Policy engine blocks `issue_refund`: ₹18,400 exceeds threshold.** | 🔴 **BLOCKED — rule: `high_value_threshold`** |
 | **2:20** | Agent says in Hindi that it cannot approve a refund this size itself and a human colleague will join. **It does not promise the refund.** | Guardrail 1 fired |
 | **2:30** | *(Optional beat)* Priya says *"agar refund nahi kiya to main case kar dungi."* Legal-threat detector fires. | 🟦 **Escalated by design** — distinct from low-confidence escalation |
-| **2:40** | Console shows the case file: confirmed slots green, unconfirmed grey, escalation reason at top. Operator clicks **Join**. | Escalation packet built |
-| **2:50** | **Human joins the same Agora channel.** Agent config updates to interpreter mode mid-call. Agent briefs the human in English: order, issue, what's confirmed, why it stopped. | Config update logged; 3 participants in channel |
+| **2:40** | Console operator opens `/call`, selects **Human agent**, enters the channel name Priya's call is on. | Escalation packet built |
+| **2:50** | **Human joins the same Agora channel** — this click *is* the join, and it fires the escalate call automatically. Agent config updates to interpreter mode mid-call. Agent briefs the human in English: order, issue, what's confirmed, why it stopped. | Config update logged; 3 participants in channel |
 | **3:10** | Human speaks English → agent interprets to Hindi. Priya replies in Hindi → agent interprets to English. Two full turns. | Interpreter mode active |
-| **3:30** | Operator approves in the console. `issue_refund` executes. Ticket created. | ✅ Tool executed → **ticket ID from Zendesk** |
+| **3:30** | Operator picks `issue_refund`, fills in `ORD-4471` / `18400`, clicks **Approve & execute**. `CallSession.human_override` runs — still enforces slot-backing, only the policy block yields, and it's a named, audited override. Ticket created. | ✅ Tool executed → **`human_override` audit event naming who approved it** → ticket ID |
 | **3:40** | Agent confirms to Priya in Hindi with the reference number. **Operator clicks approve a second time — blocked.** | 🔴 **Idempotency block** |
 | **3:55** | Call ends. Full audit trail on screen. | Complete decision trace |
 
