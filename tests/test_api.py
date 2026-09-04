@@ -38,6 +38,21 @@ def test_demo_ui_serves_html():
     assert "ShopWave" in res.text
 
 
+def test_call_ui_serves_html_with_agora_sdk():
+    res = client.get("/call")
+    assert res.status_code == 200
+    assert "AgoraRTC" in res.text
+    assert "agora-rtc-sdk-ng" in res.text
+
+
+def test_calls_start_without_agora_configured_reports_not_configured():
+    res = client.post("/calls/start", json={"channel": "test-channel-1"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["agora"]["ok"] is False
+    assert data["agora"]["error"] == "agora_not_configured"
+
+
 def test_token_endpoint_without_agora_configured():
     res = client.get("/token", params={"channel": "demo", "uid": 0})
     assert res.status_code == 200

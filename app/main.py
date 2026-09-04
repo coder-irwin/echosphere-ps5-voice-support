@@ -226,9 +226,10 @@ _DEMO_HTML = """<!doctype html>
 <style>
   :root { color-scheme: dark; }
   body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #0b0d12; color: #e6e8ee; }
-  header { padding: 16px 24px; border-bottom: 1px solid #1e222b; }
+  header { padding: 16px 24px; border-bottom: 1px solid #1e222b; display: flex; justify-content: space-between; align-items: baseline; }
   header h1 { font-size: 16px; margin: 0; }
   header p { margin: 4px 0 0; color: #8b91a0; font-size: 13px; }
+  header a { color: #7ea2ff; font-size: 13px; text-decoration: none; }
   main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; height: calc(100vh - 65px); }
   section { padding: 16px; overflow-y: auto; }
   #chat { border-right: 1px solid #1e222b; display: flex; flex-direction: column; }
@@ -245,8 +246,11 @@ _DEMO_HTML = """<!doctype html>
 </head>
 <body>
 <header>
-  <h1>ShopWave Voice Support — text demo</h1>
-  <p>PS5 · EchoSphere Agora Conversational AI Hackathon. This chat drives the real policy-adjudicated brain — no Agora call needed to see it work.</p>
+  <div>
+    <h1>ShopWave Voice Support — text demo</h1>
+    <p>PS5 · EchoSphere Agora Conversational AI Hackathon. This chat drives the real policy-adjudicated brain — no Agora call needed to see it work.</p>
+  </div>
+  <a href="/call">live voice call →</a>
 </header>
 <main>
   <section id="chat">
@@ -311,6 +315,219 @@ boot();
 @app.get("/", response_class=HTMLResponse)
 async def demo_ui() -> str:
     return _DEMO_HTML
+
+
+# ------------------------------------------------------------------- live voice call
+
+_CALL_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ShopWave Voice Support — live call</title>
+<script src="https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.8/AgoraRTC_N-production.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #0b0d12; color: #e6e8ee; }
+  header { padding: 16px 24px; border-bottom: 1px solid #1e222b; display: flex; justify-content: space-between; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; }
+  header a { color: #7ea2ff; font-size: 13px; text-decoration: none; }
+  main { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 57px); }
+  section { padding: 20px; overflow-y: auto; }
+  #controls { border-right: 1px solid #1e222b; }
+  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8b91a0; margin: 16px 0 6px; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2f3a; background: #14171f; color: #e6e8ee; box-sizing: border-box; }
+  button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #2b5fff; color: white; cursor: pointer; font-size: 14px; margin-top: 12px; }
+  button:disabled { background: #262b36; color: #6b7180; cursor: not-allowed; }
+  button.danger { background: #d1495b; }
+  button.secondary { background: #1a1e27; border: 1px solid #2a2f3a; }
+  #status { margin-top: 16px; padding: 12px; border-radius: 8px; background: #14171f; border: 1px solid #2a2f3a; font-size: 13px; line-height: 1.5; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #6b7180; margin-right: 6px; }
+  .dot.live { background: #35d07f; }
+  .dot.error { background: #d1495b; }
+  #banner { display: none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #3a2a14; border: 1px solid #5a4420; font-size: 13px; color: #f0c674; }
+  pre { background: #0f1218; border: 1px solid #1e222b; border-radius: 8px; padding: 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #8b91a0; margin-top: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ShopWave Voice Support — live call</h1>
+  <a href="/">← text demo</a>
+</header>
+<main>
+  <section id="controls">
+    <div id="banner"></div>
+
+    <label>Role</label>
+    <select id="role">
+      <option value="caller">Caller — start a new call</option>
+      <option value="agent">Human agent — join an existing call to escalate</option>
+    </select>
+
+    <label>Channel</label>
+    <input id="channel" placeholder="auto-generated if blank" />
+
+    <button id="joinBtn">Start call</button>
+    <button id="escalateBtn" class="secondary" disabled>Escalate to human</button>
+    <button id="endBtn" class="danger" disabled>End call</button>
+
+    <div id="status"><span class="dot"></span>not connected</div>
+  </section>
+  <section>
+    <h2>Transparency panel (live audit state)</h2>
+    <pre id="panel">start a call to connect…</pre>
+  </section>
+</main>
+<script>
+let client = null, localTrack = null, ws = null, currentChannel = null;
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status'), bannerEl = $('banner'), panelEl = $('panel');
+const joinBtn = $('joinBtn'), escalateBtn = $('escalateBtn'), endBtn = $('endBtn'), roleSel = $('role');
+
+function setStatus(text, kind) {
+  statusEl.innerHTML = `<span class="dot ${kind || ''}"></span>${text}`;
+}
+function banner(text) {
+  if (!text) { bannerEl.style.display = 'none'; return; }
+  bannerEl.textContent = text;
+  bannerEl.style.display = 'block';
+}
+function randomChannel() {
+  return 'call-' + Math.random().toString(36).slice(2, 8);
+}
+
+function connectPanel(sessionId) {
+  if (ws) ws.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${sessionId}`);
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.snapshot) panelEl.textContent = JSON.stringify(msg.snapshot, null, 2);
+  };
+}
+
+async function joinRtc(appId, channel, token, uid) {
+  client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+  client.on('user-published', async (user, mediaType) => {
+    await client.subscribe(user, mediaType);
+    if (mediaType === 'audio') user.audioTrack.play();
+  });
+  await client.join(appId, channel, token || null, uid);
+  localTrack = await AgoraRTC.createMicrophoneAudioTrack();
+  await client.publish([localTrack]);
+}
+
+async function leaveRtc() {
+  if (localTrack) { localTrack.close(); localTrack = null; }
+  if (client) { await client.leave(); client = null; }
+}
+
+async function startAsCaller() {
+  const channel = $('channel').value.trim() || randomChannel();
+  $('channel').value = channel;
+  setStatus('starting call…');
+  const res = await fetch('/calls/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel }),
+  });
+  const data = await res.json();
+
+  if (!data.agora || data.agora.ok === false) {
+    banner('Voice isn\\'t live yet — Agora credentials haven\\'t been configured on the server. The text demo at / still works fully.');
+    setStatus('not connected — Agora not configured', 'error');
+    return;
+  }
+  if (!data.join || !data.join.app_id) {
+    banner('Server did not return a valid Agora App ID.');
+    setStatus('not connected', 'error');
+    return;
+  }
+
+  currentChannel = channel;
+  connectPanel(channel);
+  try {
+    await joinRtc(data.join.app_id, data.join.channel, data.join.token, 0);
+  } catch (err) {
+    banner('Could not join the call: ' + (err && err.message ? err.message : err));
+    setStatus('join failed', 'error');
+    return;
+  }
+
+  setStatus(`live on "${channel}" — mic on, listening for the agent`, 'live');
+  joinBtn.disabled = true;
+  escalateBtn.disabled = false;
+  endBtn.disabled = false;
+}
+
+async function joinAsAgent() {
+  const channel = $('channel').value.trim();
+  if (!channel) { banner('Enter the channel name the caller started.'); return; }
+  setStatus('joining as human agent…');
+
+  const tokenRes = await fetch(`/token?channel=${encodeURIComponent(channel)}&uid=2`);
+  const tokenData = await tokenRes.json();
+  if (!tokenData.app_id) {
+    banner('Voice isn\\'t live yet — Agora credentials haven\\'t been configured on the server.');
+    setStatus('not connected — Agora not configured', 'error');
+    return;
+  }
+
+  currentChannel = channel;
+  connectPanel(channel);
+  try {
+    await joinRtc(tokenData.app_id, channel, tokenData.token, 2);
+  } catch (err) {
+    banner('Could not join the call: ' + (err && err.message ? err.message : err));
+    setStatus('join failed', 'error');
+    return;
+  }
+
+  const escRes = await fetch(`/calls/${encodeURIComponent(channel)}/escalate`, { method: 'POST' });
+  const escData = await escRes.json();
+  banner(escData.brief ? ('Briefed: ' + escData.brief) : null);
+
+  setStatus(`live on "${channel}" as human agent — interpreter mode active`, 'live');
+  joinBtn.disabled = true;
+  escalateBtn.disabled = true;
+  endBtn.disabled = false;
+}
+
+joinBtn.addEventListener('click', () => {
+  banner(null);
+  joinBtn.disabled = true;
+  (roleSel.value === 'agent' ? joinAsAgent() : startAsCaller()).catch((err) => {
+    banner('Unexpected error: ' + err);
+    joinBtn.disabled = false;
+  });
+});
+
+escalateBtn.addEventListener('click', async () => {
+  escalateBtn.disabled = true;
+  const res = await fetch(`/calls/${encodeURIComponent(currentChannel)}/escalate`, { method: 'POST' });
+  const data = await res.json();
+  banner(data.brief ? ('Escalated. Briefed: ' + data.brief) : 'Escalated.');
+});
+
+endBtn.addEventListener('click', async () => {
+  endBtn.disabled = true;
+  await leaveRtc();
+  if (currentChannel) await fetch(`/calls/${encodeURIComponent(currentChannel)}/stop`, { method: 'POST' });
+  if (ws) ws.close();
+  setStatus('call ended');
+  joinBtn.disabled = false;
+  escalateBtn.disabled = true;
+  panelEl.textContent = 'start a call to connect…';
+});
+</script>
+</body>
+</html>"""
+
+
+@app.get("/call", response_class=HTMLResponse)
+async def call_ui() -> str:
+    return _CALL_HTML
 
 
 # ----------------------------------------------------------------------------- admin
