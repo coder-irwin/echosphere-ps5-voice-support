@@ -26,7 +26,8 @@ transferred into a void, and never gets told a confident lie.
 | Core brain (policy, slots, guardrails, escalation, audit) | Done — 69 tests passing |
 | HTTP/WebSocket service layer + cascade LLM orchestrator | Done — [docs/09-deployment.md](docs/09-deployment.md) |
 | Public repo, Docker, live deployment | Done — see **Live demo** below |
-| Real Agora/Gemini credentials wired in | In progress |
+| Real-time voice call browser client ([/call](https://shopwave-ps5-855952895014.asia-south1.run.app/call)) | Done — caller + human-agent roles, escalation, human-approved override |
+| Real Agora/Gemini credentials wired in | Pending — the one thing blocking an actual live voice demo |
 
 ## Live demo
 
@@ -52,6 +53,36 @@ online once `AGORA_*` and `GEMINI_API_KEY` are set — see [docs/09-deployment.m
 | [docs/08-runbook.md](docs/08-runbook.md) | Evaluation-day and finale operational checklist. |
 | [docs/09-deployment.md](docs/09-deployment.md) | How to run this locally, in Docker, and how it's deployed on GCP Cloud Run. |
 | [docs/superpowers/specs/](docs/superpowers/specs/) | Formal design spec. |
+
+## Technologies used
+
+| Layer | Technology | Status |
+|---|---|---|
+| Voice transport | Agora RTC + Conversational AI Engine, Agora Web SDK (`agora-rtc-sdk-ng` 4.24.8) | Backend + browser client built ([/call](https://shopwave-ps5-855952895014.asia-south1.run.app/call)); live voice pending real Agora credentials |
+| Model — primary | Gemini Live (MLLM, speech-to-speech) | Designed, unverified against the live API (R1) |
+| Model — deployed | Gemini `generateContent` (cascade path) | Live, pending `GEMINI_API_KEY` |
+| Backend | Python 3.12, FastAPI, Pydantic v2, httpx, WebSockets | Live |
+| Frontend | Vanilla HTML/JS (text-chat demo + voice-call client) | Live |
+| Tests | pytest, pytest-asyncio, FastAPI TestClient | 76 passing |
+| CI | GitHub Actions | Live, runs on every push/PR |
+| Infra | Docker, GCP Cloud Run, Artifact Registry, Cloud Build, Secret Manager | Live — see [docs/09-deployment.md](docs/09-deployment.md) |
+| Data | In-memory JSON-backed store (orders, customers, products, knowledge base) | Live — simulated, not a real DB |
+| Ticketing | Simulated sandbox (`app/tools/ticketing.py`) | Live — real Zendesk/Freshdesk integration not yet built |
+
+## Known limitations
+
+- **Voice hasn't been demoed live yet.** Everything is built and deployed, but real Agora/Gemini
+  credentials haven't been wired in — see the Status table above.
+- **MLLM tool-calling (R1) is unverified** against the live Agora API; cascade mode is the
+  deployed default and doesn't need it.
+- **No persistent database.** Orders/customers/products are in-memory JSON, reset on
+  redeploy or `POST /admin/reset`.
+- **No auth on the service.** `--allow-unauthenticated` is deliberate so judges can reach it
+  without credentials, but `/admin/reset` and `/calls/*` are open to anyone with the URL.
+- **No CI/CD.** Tests run on every push; deploys are still a manual `gcloud run deploy`.
+- **Ticketing is simulated**, not a real Zendesk/Freshdesk sandbox.
+- **Scale is untested** beyond a handful of concurrent sessions; see
+  [docs/05-judge-qa.md](docs/05-judge-qa.md) for the honest list of what we can't yet answer.
 
 ## Key dates (2026)
 
