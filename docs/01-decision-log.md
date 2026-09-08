@@ -226,6 +226,40 @@ wrapped in a `try/except httpx.HTTPError`, since the real join call takes long e
 spin up an agent that 15s produced unhandled timeouts (bare 500s) rather than the graceful
 `{"ok": false, ...}" shape every other integration point in this codebase returns.
 
+### D15. Gemini via Vertex AI, not the AI Studio dev key; slot ladder wired into the model loop
+
+**Decision:** `GeminiClient` (app/adapters/llm.py) picks its backend automatically —
+**Vertex AI** whenever `GCP_PROJECT_ID` is set (true on Cloud Run), else the original
+AI Studio `x-goog-api-key` path. Both speak the same request/response shape; only the URL
+and auth header differ (Vertex uses a Bearer token from Application Default Credentials —
+the Cloud Run service account, granted `roles/aiplatform.user`).
+
+Why: with real credentials finally wired in (see R8), every model recent enough to be
+served to new AI-Studio API-key users required prepay billing credits this account didn't
+have, while every older free-tier model had been sunset. The project's own GCP billing
+account, by contrast, was already active and paying for Cloud Run and Cloud Build — Vertex
+AI's Gemini endpoint bills through that same account. Switching backends closed the gap
+without the account owner touching billing at all.
+
+**Also decided the same night:** the confirmation ladder (`app/core/slots.py`) had a real
+gap — see R9 — closed by adding `report_slot`/`confirm_slot` as tools the model can call,
+routed by `app/core/orchestrator.py` straight to `CallSession.observe_slot`/`confirm_slot`
+rather than through `propose_action`, since they're conversational bookkeeping with nothing
+for the policy engine to adjudicate. `confirm_slot` takes the value being confirmed
+directly rather than requiring a separate prior `report_slot` call, because live testing
+showed models don't reliably split "heard" and "confirmed" across two tool calls the way
+the ladder's internal state machine does — a caller's "yes, ORD-4471 is right" already
+carries the value being confirmed, so the tool should accept it in one call.
+
+**Also fixed:** the tool loop used to discard a hop's spoken text entirely whenever that
+same hop also called a tool — `if not tool_calls: spoken = text`. Real Gemini routinely
+narrates a step ("Let me check that...") in the same response it calls a function in;
+silently dropping that text lost real conversation and left the model's own turn history
+missing what it had just said, which was the direct cause of confused, looping replies
+observed in early live testing. Fixed by accumulating every hop's non-empty text and
+joining it into the final spoken reply, and by including that text alongside the
+`functionCall` parts appended to `contents` so the model's own history reflects it.
+
 ---
 
 ## Running log
@@ -235,4 +269,4 @@ spin up an agent that 15s produced unhandled timeouts (bare 500s) rather than th
 | 9 Aug 2026 | PS5 selected, e-commerce domain locked, ShopWave reuse strategy set, concept + architecture + coverage map approved. Doc set created. |
 | 1 Sep 2026 | Organisers confirmed the ShopWave reuse rule (R2) is acceptable — resolved, see [docs/04-risks-and-open-questions.md](04-risks-and-open-questions.md). Built the missing service layer end to end: FastAPI app (`app/main.py`), cascade LLM orchestrator (`app/core/orchestrator.py`, D10/D11), Docker image, 10 new tests (69 total, all passing with zero credentials configured). Published the repo publicly at [github.com/coder-irwin/echosphere-ps5-voice-support](https://github.com/coder-irwin/echosphere-ps5-voice-support), added Vedansh (theDeviser) as a collaborator. Stood up a dedicated GCP project (`echosphere-ps5-hackathon`) and deployed to Cloud Run — live at the URL in the README. Real Agora/Gemini credentials still pending from the team; R1 (MLLM tool-calling) remains unverified until they're wired in, cascade mode is the deployed default in the meantime. |
 | 4 Sep 2026 | Built the real-time voice call browser client at `/call` (D12) — Agora Web SDK, caller and human-agent roles both joinable from the same page, wired to the actual escalation/interpreter-mode endpoints. While preparing against the demo script (docs/07-demo-script.md) found that the script's 3:30 beat — "operator approves in the console, `issue_refund` executes" — had **no corresponding code path**: `human_present` didn't grant any override of a policy block. Added `CallSession.human_override` (D13) and `POST /calls/{channel}/approve` to close that gap; still fully enforces slot-backing, only bypasses the policy block, and only when a human has actually joined. 76 tests passing. Vedansh's collaborator invite accepted. Still blocked on real Agora/Gemini credentials. |
-| 8 Sep 2026 | Real Agora + Gemini credentials received and wired into GCP Secret Manager, Cloud Run redeployed. First live contact with the real Agora Conversational AI join API surfaced three genuine, fixed bugs (D14): a stray `llm.tools` field with no `server` reference that Agora rejected outright, a 15s timeout too short for the real join call (crashing with a bare 500 instead of a graceful error), and Microsoft ASR/TTS not being available under this project's managed-credential SKU. Switched to Deepgram (ASR) + OpenAI (TTS) in managed mode — confirmed via a live smoke test: `POST /calls/start` now returns a real, `RUNNING` Agora agent. The one remaining blocker (R8) is external: every Gemini model young enough to still be served to new API-key users requires prepay billing credits this account doesn't have yet; older free-tier models have been sunset. Code defaults to the correct current model (`gemini-3.6-flash`) so no further code change is needed once billing is set up. |
+| 8 Sep 2026 | Real Agora + Gemini credentials received and wired into GCP Secret Manager, Cloud Run redeployed. First live contact with the real Agora Conversational AI join API surfaced three genuine, fixed bugs (D14): a stray `llm.tools` field with no `server` reference that Agora rejected outright, a 15s timeout too short for the real join call (crashing with a bare 500 instead of a graceful error), and Microsoft ASR/TTS not being available under this project's managed-credential SKU. Switched to Deepgram (ASR) + OpenAI (TTS) in managed mode — confirmed via a live smoke test: `POST /calls/start` now returns a real, `RUNNING` Agora agent. Hit a second wall (R8): every Gemini model young enough to still be served to new AI-Studio API-key users required prepay billing credits this account didn't have. Closed it by switching the cascade LLM to Vertex AI instead (D15), authenticating as the Cloud Run service account and billing through the project's already-active GCP billing account — no billing action needed from the account owner. That first real conversation then surfaced a second, more significant gap (R9): the confirmation ladder was fully built and unit-tested but never wired into the live conversation loop, so every mutating tool call was permanently blocked regardless of what the caller said. Closed by adding `report_slot`/`confirm_slot` tools (D15) and fixing a text-loss bug in the tool loop that was silently dropping the model's spoken narration whenever it also called a tool. Verified end to end via a live multi-turn conversation: real intent classification, a real `get_order`/`check_refund_eligibility` round-trip, and a genuine `identity_unverified` policy block with a full escalation packet — the actual product, working, live, for the first time. 79 tests passing. |

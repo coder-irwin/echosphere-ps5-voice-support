@@ -81,6 +81,83 @@ async def test_loop_that_never_stops_calling_tools_escalates_instead_of_hanging(
     assert "colleague" in outcome["spoken"]
 
 
+async def test_report_then_confirm_slot_unblocks_a_slot_backed_action(session):
+    stub = StubGemini(
+        [
+            {
+                "text": "",
+                "tool_calls": [
+                    {"name": "report_slot", "args": {"field": "order_id", "value": "ORD-4471"}}
+                ],
+            },
+            {
+                "text": "",
+                "tool_calls": [
+                    {
+                        "name": "confirm_slot",
+                        "args": {"field": "order_id", "value": "ORD-4471"},
+                    }
+                ],
+            },
+            {
+                "text": "",
+                "tool_calls": [
+                    {"name": "issue_refund", "args": {"order_id": "ORD-4471", "amount": 100.0}}
+                ],
+            },
+            {"text": "All done.", "tool_calls": []},
+        ]
+    )
+
+    outcome = await run_turn(session, "my order ORD-4471 arrived damaged", gemini=stub)
+
+    assert outcome["spoken"] == "All done."
+    assert session.slots.get("order_id").is_confirmed
+    # Blocked, if at all, by something other than the slot never having been confirmed —
+    # this is the one rule report_slot + confirm_slot exists to satisfy.
+    assert all(v.rule != "unconfirmed_slot" for v in session.blocked_verdicts)
+
+
+async def test_confirm_slot_carries_its_own_value_without_a_prior_report(session):
+    """A model that never calls report_slot separately still confirms correctly — real
+    models don't reliably split "heard" and "confirmed" across two tool calls, and a
+    caller's "yes, ORD-4471 is right" already carries the value being confirmed."""
+    stub = StubGemini(
+        [
+            {
+                "text": "",
+                "tool_calls": [
+                    {
+                        "name": "confirm_slot",
+                        "args": {"field": "order_id", "value": "ORD-4471"},
+                    }
+                ],
+            },
+            {"text": "Got it, confirmed.", "tool_calls": []},
+        ]
+    )
+
+    outcome = await run_turn(session, "yes, ORD-4471 is correct", gemini=stub)
+
+    assert outcome["spoken"] == "Got it, confirmed."
+    assert session.slots.get("order_id").is_confirmed
+    assert session.slots.get("order_id").value == "ORD-4471"
+
+
+async def test_confirm_slot_with_no_value_and_no_prior_report_is_refused_not_crashed(session):
+    stub = StubGemini(
+        [
+            {"text": "", "tool_calls": [{"name": "confirm_slot", "args": {"field": "order_id"}}]},
+            {"text": "Let me get that from you first.", "tool_calls": []},
+        ]
+    )
+
+    outcome = await run_turn(session, "please confirm my order", gemini=stub)
+
+    assert outcome["spoken"] == "Let me get that from you first."
+    assert not session.slots.get("order_id") or not session.slots.get("order_id").is_confirmed
+
+
 async def test_human_present_short_circuits_the_model_loop(session):
     session.human_joined("Rahul")
     stub = StubGemini([])  # would raise IndexError if called — proves the loop is skipped

@@ -6,33 +6,79 @@ this module is idle.
 Kept deliberately thin: the reasoning model proposes tool calls, and everything about
 whether a proposed call is permitted happens in `CallSession.propose_action`. This module
 never decides anything.
+
+Two backends, picked automatically:
+
+  Vertex AI     Used when `GCP_PROJECT_ID` is set (it is, on Cloud Run). Authenticates as
+                the Cloud Run service account via Application Default Credentials and bills
+                through the project's own GCP billing account — no separate API-key wallet.
+  AI Studio key Used otherwise (local dev without `gcloud auth application-default login`,
+                or any deployment target that isn't GCP). Simple `x-goog-api-key` auth
+                against a Gemini Developer API key, which has its own separate prepay
+                billing — see R8 in docs/04-risks-and-open-questions.md.
+
+Both speak the same request/response shape (`contents`, `systemInstruction`, `tools`,
+`candidates[0].content.parts`), confirmed against the live APIs — only the URL and auth
+header differ.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Optional
 
 import httpx
 
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.6-flash")
+AI_STUDIO_BASE = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_AI_STUDIO_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.6-flash")
+DEFAULT_VERTEX_MODEL = os.getenv("GEMINI_VERTEX_MODEL", "gemini-2.5-flash")
+
+_vertex_credentials: Any = None
+
+
+def _load_vertex_credentials() -> Any:
+    global _vertex_credentials
+    if _vertex_credentials is None:
+        import google.auth
+
+        _vertex_credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    return _vertex_credentials
+
+
+async def _vertex_access_token() -> str:
+    import google.auth.transport.requests
+
+    creds = _load_vertex_credentials()
+    if not creds.valid:
+        await asyncio.to_thread(creds.refresh, google.auth.transport.requests.Request())
+    return creds.token
 
 
 class GeminiClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = DEFAULT_MODEL,
+        model: Optional[str] = None,
         timeout: float = 20.0,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model = model
+        self.project = project or os.getenv("GCP_PROJECT_ID", "")
+        self.location = location or os.getenv("GCP_LOCATION", "us-central1")
+        self.model = model or (DEFAULT_VERTEX_MODEL if self.project else DEFAULT_AI_STUDIO_MODEL)
         self.timeout = timeout
 
     @property
+    def use_vertex(self) -> bool:
+        return bool(self.project)
+
+    @property
     def configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.project or self.api_key)
 
     async def generate(
         self,
@@ -56,11 +102,35 @@ class GeminiClient:
         if tools:
             payload["tools"] = tools
 
-        url = f"{GEMINI_BASE}/models/{self.model}:generateContent"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                url, json=payload, headers={"x-goog-api-key": self.api_key}
-            )
+        try:
+            if self.use_vertex:
+                token = await _vertex_access_token()
+                url = (
+                    f"https://{self.location}-aiplatform.googleapis.com/v1/projects/"
+                    f"{self.project}/locations/{self.location}/publishers/google/models/"
+                    f"{self.model}:generateContent"
+                )
+                headers = {"Authorization": f"Bearer {token}"}
+            else:
+                url = f"{AI_STUDIO_BASE}/models/{self.model}:generateContent"
+                headers = {"x-goog-api-key": self.api_key}
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            return {
+                "text": "",
+                "tool_calls": [],
+                "error": "gemini_request_failed",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
+        except Exception as exc:  # google-auth credential errors, misconfigured ADC, etc.
+            return {
+                "text": "",
+                "tool_calls": [],
+                "error": "gemini_auth_failed",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
 
         if response.status_code >= 400:
             return {

@@ -75,7 +75,20 @@ webhook needs to hand Agora a URL back to itself):
 
 ```bash
 gcloud run services update shopwave-ps5 --region asia-south1 \
-  --set-env-vars PUBLIC_BASE_URL=https://<service-url>,AGENT_MODE=cascade
+  --set-env-vars PUBLIC_BASE_URL=https://<service-url>,AGENT_MODE=cascade,\
+GCP_PROJECT_ID=<project-id>,GCP_LOCATION=us-central1
+```
+
+`GCP_PROJECT_ID`/`GCP_LOCATION` are what put `GeminiClient` on the **Vertex AI** backend
+instead of the Google AI Studio dev-key path (see D15/R8) — it authenticates as the Cloud
+Run service account via Application Default Credentials, and bills through this project's
+own GCP billing rather than a separate API-key prepay wallet. That service account needs
+`roles/aiplatform.user`:
+
+```bash
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
 ```
 
 ### Secrets

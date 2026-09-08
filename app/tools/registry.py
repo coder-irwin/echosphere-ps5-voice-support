@@ -124,7 +124,30 @@ DECLARATIONS: tuple[ToolDecl, ...] = (
         {"reason": _STR},
         ("reason",),
     ),
+    ToolDecl(
+        "report_slot",
+        "Record a detail the caller just stated — an order_id, phone, email, new_address, "
+        "order_date or product_name — before you have read it back. Call this every time "
+        "you hear a new value for one of these fields, even if you have not confirmed it "
+        "yet. This does not authorise anything by itself.",
+        {"field": _STR, "value": _STR},
+        ("field", "value"),
+    ),
+    ToolDecl(
+        "confirm_slot",
+        "Call this only immediately after you have read a value back to the caller — "
+        "digit by digit for identifiers — and they have explicitly agreed it is correct. "
+        "Always pass the exact value they confirmed, even if you already called "
+        "report_slot for it earlier. Never call this without an explicit yes from the "
+        "caller.",
+        {"field": _STR, "value": _STR},
+        ("field", "value"),
+    ),
 )
+
+# Bookkeeping tools the orchestrator routes straight to the slot ladder rather than
+# through CallSession.propose_action — they track what the caller said, they never act.
+SLOT_TOOLS = frozenset({"report_slot", "confirm_slot"})
 
 BY_NAME = {d.name: d for d in DECLARATIONS}
 

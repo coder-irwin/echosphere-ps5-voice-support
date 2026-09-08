@@ -23,11 +23,11 @@ transferred into a void, and never gets told a confident lie.
 | Case coverage map | Approved |
 | Demo script & eval-day plan | Done — [docs/07-demo-script.md](docs/07-demo-script.md), [docs/08-runbook.md](docs/08-runbook.md) |
 | Design spec written | Done — [docs/superpowers/specs/](docs/superpowers/specs/) |
-| Core brain (policy, slots, guardrails, escalation, audit) | Done — 69 tests passing |
+| Core brain (policy, slots, guardrails, escalation, audit) | Done — 79 tests passing |
 | HTTP/WebSocket service layer + cascade LLM orchestrator | Done — [docs/09-deployment.md](docs/09-deployment.md) |
 | Public repo, Docker, live deployment | Done — see **Live demo** below |
 | Real-time voice call browser client ([/call](https://shopwave-ps5-855952895014.asia-south1.run.app/call)) | Done — caller + human-agent roles, escalation, human-approved override |
-| Real Agora/Gemini credentials wired in | Done — Agora agent joins and runs live end-to-end; blocked only on Gemini API billing credits (see R8) |
+| Real Agora/Gemini credentials wired in, verified live end-to-end | Done — real conversation, real tool calls, real policy block, confirmed 8 Sep 2026 |
 
 ## Live demo
 
@@ -71,12 +71,18 @@ online once `AGORA_*` and `GEMINI_API_KEY` are set — see [docs/09-deployment.m
 
 ## Known limitations
 
-- **Voice hasn't been demoed with a real spoken reply yet.** Agora credentials are live —
-  `POST /calls/start` returns a real, `RUNNING` Conversational AI agent — but the Gemini API
-  key backing the cascade LLM has no usable model without prepay billing credits (R8). Add
-  credits at https://ai.studio/projects and no further code change is needed.
+- **Voice hasn't been demoed over a real phone/browser call yet.** The text-chat path
+  (`/`) is verified live end-to-end — real intent classification, real tool calls, a real
+  policy block — and a real Agora Conversational AI agent joins and runs (`/calls/start`
+  returns `RUNNING`) with the same cascade brain behind it. What's untested is a live
+  microphone conversation through `/call`, which needs a person on a mic, not more code.
 - **MLLM tool-calling (R1) is unverified** against the live Agora API; cascade mode is the
   deployed default and doesn't need it.
+- **Model reliability nuance (R9):** in a multi-slot conversation, Gemini has occasionally
+  confirmed the wrong field right after confirming another one in the same conversation
+  (e.g. re-confirming an order ID instead of a phone number just read back). The slot it
+  actually names is always confirmed correctly — this is a prompting nuance to tune, not a
+  guardrail failure.
 - **No persistent database.** Orders/customers/products are in-memory JSON, reset on
   redeploy or `POST /admin/reset`.
 - **No auth on the service.** `--allow-unauthenticated` is deliberate so judges can reach it

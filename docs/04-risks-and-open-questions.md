@@ -37,35 +37,75 @@ ShopWave Core is transport-agnostic and the adapter is ~200 lines.
 
 ---
 
-## R8 — Gemini API key has no usable model without prepay billing
+## R8 — Gemini API key has no usable model without prepay billing — RESOLVED (8 Sep 2026)
 
-**Status (8 Sep 2026):** blocking. Discovered during the first live end-to-end smoke test
-with real Agora + Gemini credentials.
+**Status:** resolved by switching backends, not by paying the wallet. The dev-key path
+(Google AI Studio) is still blocked as described below and is kept as the non-GCP fallback,
+but the deployed service now talks to **Vertex AI** instead — same Gemini models, billed
+through the project's existing, already-active GCP billing account rather than a separate
+API-key prepay wallet. `app/adapters/llm.py`'s `GeminiClient` picks Vertex automatically
+whenever `GCP_PROJECT_ID` is set (it is, on Cloud Run), authenticating as the Cloud Run
+service account via Application Default Credentials — no new secret needed. Confirmed live:
+`POST /sessions/{id}/message` now drives a real conversation through intent classification,
+the confirmation ladder, a real `get_order`/`check_refund_eligibility` tool round-trip, and
+a genuine `identity_unverified` policy block with a full escalation packet — see D15.
 
-**Severity:** critical right now — it is the only thing standing between "agent joins and
-runs" (confirmed working) and "agent actually replies."
+**Original problem, unresolved on the AI-Studio path specifically:** every Gemini model
+recent enough to still be served to new API-key users (`gemini-3.6-flash` onward) returns
+`429 RESOURCE_EXHAUSTED: Your prepayment credits are depleted`, and every older model that
+doesn't need prepay (`gemini-2.5-flash` and earlier) returns `404: no longer available to
+new users`. If `GEMINI_API_KEY` is ever used without `GCP_PROJECT_ID` set (e.g. running
+this outside GCP), that gap still exists and needs prepay credits added at
+https://ai.studio/projects.
 
-With real credentials wired in, the Agora side works end to end: `POST /calls/start` returns
-`{"agora":{"ok":true,"status":"RUNNING"}}` — a real Agora Conversational AI agent joins the
-channel using Deepgram ASR and OpenAI TTS in `credential_mode: "managed"` (see D14). The
-`/agora/llm/{channel}/v1/chat/completions` webhook is reachable and gets called. But every
-Gemini model recent enough to still be served to new API-key users
-(`gemini-3.6-flash` onward) returns `429 RESOURCE_EXHAUSTED: Your prepayment credits are
-depleted`, and every older model that doesn't need prepay (`gemini-2.5-flash` and earlier)
-returns `404: no longer available to new users`. There is currently no model this key can
-call.
+**Severity (pre-resolution):** critical — it was the only thing standing between "agent
+joins and runs" and "agent actually replies." With real credentials wired in, the Agora
+side already worked end to end (`POST /calls/start` → `{"agora":{"ok":true,"status":
+"RUNNING"}}`, Deepgram ASR + OpenAI TTS in `credential_mode: "managed"`, see D14); Gemini
+billing was the last gap, and Vertex AI closed it without needing the account owner to do
+anything.
 
-**Action needed (from the account owner, not fixable in code):** go to
-https://ai.studio/projects for the project tied to `GEMINI_API_KEY`, and add prepay
-credits / attach a billing method to the Generative Language API. Once that's done, no
-redeploy is needed to pick it up — `GEMINI_TEXT_MODEL` already defaults to
-`gemini-3.6-flash` in `app/adapters/llm.py`.
+**Not the same failure as R1** — this was a billing gate on the cascade path, which has
+now been end-to-end verified against the live API, including real tool calls and a real
+policy block. R1 (MLLM tool-calling) remains separately unverified, and additionally this
+project's Gemini model list has no full speech-to-speech Live model available at all (only
+`gemini-3.5-transcribe-live`, which is transcription-only) — so MLLM mode cannot be spiked
+on this account regardless of billing.
 
-**Not the same failure as R1** — this is a billing gate on the cascade path, which has
-otherwise been end-to-end verified against the live API. R1 (MLLM tool-calling) remains
-separately unverified, and additionally this key's model list has no full speech-to-speech
-Live model available at all (only `gemini-3.5-transcribe-live`, which is transcription-only)
-— so MLLM mode cannot even be spiked on this account regardless of billing.
+---
+
+## R9 — The confirmation ladder was never wired into the cascade conversation
+
+**Status (8 Sep 2026):** fixed. Found and closed the same night as R8, once a real
+conversation could finally reach the tool-calling loop for the first time.
+
+**Severity:** was critical — this is the core differentiator of the whole product.
+
+`CallSession.observe_slot` / `confirm_slot` (the `unheard → heard → read_back → confirmed`
+ladder in `app/core/slots.py`) already existed, fully built and unit-tested
+(`tests/test_scenarios.py`), but nothing in `app/core/orchestrator.py`'s live conversation
+loop ever called them — they were only ever invoked directly by tests, simulating what a
+real pipeline was assumed to do. In practice, every slot stayed `unheard` forever regardless
+of what the caller said, so any mutating tool call (`issue_refund`, `cancel_order`, ...) was
+permanently blocked by `unconfirmed_slot`, no matter how thorough the conversation was. This
+was invisible before tonight because every earlier smoke test failed for an unrelated
+reason (missing credentials, then the Agora schema/timeout bugs in D14, then R8's billing
+gate) before ever reaching this code path live.
+
+**Fix (D15):** added `report_slot`/`confirm_slot` as tools Gemini can call, routed in the
+orchestrator straight to the slot ladder rather than through `CallSession.propose_action`
+(they're conversational bookkeeping, not business actions — nothing for the policy engine
+to adjudicate). `confirm_slot` always carries the value being confirmed, so it works
+whether or not the model called `report_slot` separately first — real models don't reliably
+split "heard" and "confirmed" across two tool calls the way the ladder's state machine
+does internally.
+
+**Residual, not fixed tonight:** live testing surfaced that gemini-2.5-flash occasionally
+confirms the wrong field when two identifiers are read back in quick succession (e.g.
+re-confirming `order_id` right after a phone-number read-back instead of confirming
+`phone`) — a model reliability nuance, not a code defect; the slot the model actually named
+gets confirmed correctly. Worth a prompt-tuning pass with fresh eyes rather than more
+solo late-night iteration against a nondeterministic model.
 
 ---
 
