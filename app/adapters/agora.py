@@ -25,7 +25,7 @@ from typing import Any, Literal, Optional
 import httpx
 
 from app.adapters.prompts import base_instruction
-from app.tools.registry import gemini_tools, openai_tools
+from app.tools.registry import gemini_tools
 
 API_BASE = "https://api.agora.io/api/conversational-ai-agent/v2/projects"
 PUBLISHER_ROLE = 1
@@ -44,9 +44,17 @@ class AgoraConfig:
     gemini_model: str = "gemini-3.1-flash-live-preview"
     gemini_voice: str = "Charon"
     llm_base_url: str = ""  # our own endpoint, for the cascade path
-    asr_vendor: str = "microsoft"
-    asr_language: str = "en-IN"
-    tts_vendor: str = "microsoft"
+    # Deepgram (ASR) / OpenAI (TTS) are the only vendors this project's free-tier Agora
+    # SKU accepts under credential_mode: "managed" — Microsoft required a BYOK registration
+    # under Agora's "Model Credentials" page that this account doesn't have. "multi" is
+    # Deepgram nova-3's code-switching language setting; Hindi coverage under it is
+    # unverified — see docs/04-risks-and-open-questions.md.
+    asr_vendor: str = "deepgram"
+    asr_language: str = "multi"
+    asr_model: str = "nova-3"
+    tts_vendor: str = "openai"
+    tts_model: str = "tts-1"
+    tts_voice: str = "coral"
     idle_timeout: int = 60
 
     @classmethod
@@ -61,6 +69,7 @@ class AgoraConfig:
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview"),
             gemini_voice=os.getenv("GEMINI_VOICE", "Charon"),
             llm_base_url=os.getenv("PUBLIC_BASE_URL", ""),
+            asr_language=os.getenv("AGORA_ASR_LANGUAGE", "multi"),
             idle_timeout=int(os.getenv("AGORA_IDLE_TIMEOUT", "60")),
         )
 
@@ -112,11 +121,15 @@ def _mllm_properties(cfg: AgoraConfig, instruction: str) -> dict[str, Any]:
 
 
 def _cascade_llm(cfg: AgoraConfig, instruction: str) -> dict[str, Any]:
+    # No `tools` here: Agora's cascade engine only ever sees the finished assistant text
+    # our own webhook returns. Tool declaration and execution happen entirely inside
+    # app/core/orchestrator.py before we reply — Agora never calls a function itself, and
+    # its `llm.tools` schema (which now requires a `server` reference per entry, presumably
+    # for MCP-routed tools) doesn't apply to a vendor: "custom" backend that runs its own loop.
     return {
         "vendor": "custom",
         "url": f"{cfg.llm_base_url.rstrip('/')}/v1/chat/completions",
         "system_messages": [{"role": "system", "content": instruction}],
-        "tools": openai_tools(),
         "max_history": 32,
         "greeting_message": "",
     }
@@ -150,10 +163,26 @@ def build_agent_payload(
     else:
         payload["properties"]["asr"] = {
             "vendor": cfg.asr_vendor,
-            "language": cfg.asr_language,
+            # No API key of our own for the ASR/TTS vendor is configured in Agora's
+            # "Model Credentials" — "managed" tells Agora to use its own bundled key
+            # instead of expecting a BYOK registration under our account.
+            "credential_mode": "managed",
+            "params": {
+                "url": "wss://api.deepgram.com/v1/listen",
+                "model": cfg.asr_model,
+                "language": cfg.asr_language,
+            },
         }
         payload["properties"]["llm"] = _cascade_llm(cfg, instruction)
-        payload["properties"]["tts"] = {"vendor": cfg.tts_vendor}
+        payload["properties"]["tts"] = {
+            "vendor": cfg.tts_vendor,
+            "credential_mode": "managed",
+            "params": {
+                "url": "https://api.openai.com/v1/audio/speech",
+                "model": cfg.tts_model,
+                "voice": cfg.tts_voice,
+            },
+        }
         payload["properties"]["turn_detection"] = {
             "type": "agora_vad",
             "interrupt_mode": "interrupt",
@@ -166,7 +195,7 @@ def build_agent_payload(
 
 
 class AgoraConvoAI:
-    def __init__(self, cfg: Optional[AgoraConfig] = None, timeout: float = 15.0) -> None:
+    def __init__(self, cfg: Optional[AgoraConfig] = None, timeout: float = 45.0) -> None:
         self.cfg = cfg or AgoraConfig.from_env()
         self.timeout = timeout
 
@@ -205,8 +234,15 @@ class AgoraConvoAI:
                 "detail": "Set AGORA_APP_ID, AGORA_CUSTOMER_KEY and AGORA_CUSTOMER_SECRET.",
                 "would_have_sent": payload,
             }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, auth=self._auth)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, json=payload, auth=self._auth)
+        except httpx.HTTPError as exc:
+            return {
+                "ok": False,
+                "error": "agora_request_failed",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
         if response.status_code >= 400:
             return {
                 "ok": False,

@@ -16,7 +16,7 @@ from typing import Any, Optional
 import httpx
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3-flash")
+DEFAULT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.6-flash")
 
 
 class GeminiClient:

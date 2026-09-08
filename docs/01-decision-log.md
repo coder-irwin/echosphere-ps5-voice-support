@@ -201,6 +201,31 @@ only be reached from `POST /calls/{channel}/approve`, which nothing but a human 
 — a human approving an action never grants permission to act on a value the caller didn't
 confirm.
 
+### D14. Cascade ASR/TTS: Deepgram + OpenAI in `credential_mode: "managed"`, not Microsoft
+
+**Decision:** the cascade path uses `asr.vendor: "deepgram"` and `tts.vendor: "openai"`,
+both with `credential_mode: "managed"`, instead of the originally-assumed Microsoft vendor.
+
+Discovered against the live API, not documented anywhere obvious beforehand: this Agora
+project's free-tier SKU rejects `vendor: "microsoft"` under managed credentials
+(`"vendor 'microsoft' is not available for the current SKU when credential_mode is
+'managed'"`), and there is no Azure Speech key registered under Agora's "Model
+Credentials" page to run it as BYOK instead. Deepgram (ASR) and OpenAI (TTS) are the
+vendors Agora's own docs confirm work under managed mode without registering a key. ASR
+language is set to Deepgram nova-3's `"multi"` code-switch mode as a best-effort attempt at
+Hindi/English — coverage is unverified; see R8 in
+[04-risks-and-open-questions.md](04-risks-and-open-questions.md).
+
+Also fixed alongside this: the cascade `llm` block no longer sends a `tools` array to
+Agora — our own webhook (`/agora/llm/{channel}/...`) runs the full tool-calling loop
+internally via `app/core/orchestrator.py` before ever replying, so Agora's cascade engine
+never needs to know our function schema. The `llm.tools` field it originally sent required
+a `server` reference (apparently for MCP-routed tools), which doesn't apply here and was
+rejected outright. `AgoraConvoAI`'s request timeout was also raised from 15s to 45s and
+wrapped in a `try/except httpx.HTTPError`, since the real join call takes long enough to
+spin up an agent that 15s produced unhandled timeouts (bare 500s) rather than the graceful
+`{"ok": false, ...}" shape every other integration point in this codebase returns.
+
 ---
 
 ## Running log
@@ -210,3 +235,4 @@ confirm.
 | 9 Aug 2026 | PS5 selected, e-commerce domain locked, ShopWave reuse strategy set, concept + architecture + coverage map approved. Doc set created. |
 | 1 Sep 2026 | Organisers confirmed the ShopWave reuse rule (R2) is acceptable — resolved, see [docs/04-risks-and-open-questions.md](04-risks-and-open-questions.md). Built the missing service layer end to end: FastAPI app (`app/main.py`), cascade LLM orchestrator (`app/core/orchestrator.py`, D10/D11), Docker image, 10 new tests (69 total, all passing with zero credentials configured). Published the repo publicly at [github.com/coder-irwin/echosphere-ps5-voice-support](https://github.com/coder-irwin/echosphere-ps5-voice-support), added Vedansh (theDeviser) as a collaborator. Stood up a dedicated GCP project (`echosphere-ps5-hackathon`) and deployed to Cloud Run — live at the URL in the README. Real Agora/Gemini credentials still pending from the team; R1 (MLLM tool-calling) remains unverified until they're wired in, cascade mode is the deployed default in the meantime. |
 | 4 Sep 2026 | Built the real-time voice call browser client at `/call` (D12) — Agora Web SDK, caller and human-agent roles both joinable from the same page, wired to the actual escalation/interpreter-mode endpoints. While preparing against the demo script (docs/07-demo-script.md) found that the script's 3:30 beat — "operator approves in the console, `issue_refund` executes" — had **no corresponding code path**: `human_present` didn't grant any override of a policy block. Added `CallSession.human_override` (D13) and `POST /calls/{channel}/approve` to close that gap; still fully enforces slot-backing, only bypasses the policy block, and only when a human has actually joined. 76 tests passing. Vedansh's collaborator invite accepted. Still blocked on real Agora/Gemini credentials. |
+| 8 Sep 2026 | Real Agora + Gemini credentials received and wired into GCP Secret Manager, Cloud Run redeployed. First live contact with the real Agora Conversational AI join API surfaced three genuine, fixed bugs (D14): a stray `llm.tools` field with no `server` reference that Agora rejected outright, a 15s timeout too short for the real join call (crashing with a bare 500 instead of a graceful error), and Microsoft ASR/TTS not being available under this project's managed-credential SKU. Switched to Deepgram (ASR) + OpenAI (TTS) in managed mode — confirmed via a live smoke test: `POST /calls/start` now returns a real, `RUNNING` Agora agent. The one remaining blocker (R8) is external: every Gemini model young enough to still be served to new API-key users requires prepay billing credits this account doesn't have yet; older free-tier models have been sunset. Code defaults to the correct current model (`gemini-3.6-flash`) so no further code change is needed once billing is set up. |

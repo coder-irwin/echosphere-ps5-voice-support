@@ -37,6 +37,38 @@ ShopWave Core is transport-agnostic and the adapter is ~200 lines.
 
 ---
 
+## R8 — Gemini API key has no usable model without prepay billing
+
+**Status (8 Sep 2026):** blocking. Discovered during the first live end-to-end smoke test
+with real Agora + Gemini credentials.
+
+**Severity:** critical right now — it is the only thing standing between "agent joins and
+runs" (confirmed working) and "agent actually replies."
+
+With real credentials wired in, the Agora side works end to end: `POST /calls/start` returns
+`{"agora":{"ok":true,"status":"RUNNING"}}` — a real Agora Conversational AI agent joins the
+channel using Deepgram ASR and OpenAI TTS in `credential_mode: "managed"` (see D14). The
+`/agora/llm/{channel}/v1/chat/completions` webhook is reachable and gets called. But every
+Gemini model recent enough to still be served to new API-key users
+(`gemini-3.6-flash` onward) returns `429 RESOURCE_EXHAUSTED: Your prepayment credits are
+depleted`, and every older model that doesn't need prepay (`gemini-2.5-flash` and earlier)
+returns `404: no longer available to new users`. There is currently no model this key can
+call.
+
+**Action needed (from the account owner, not fixable in code):** go to
+https://ai.studio/projects for the project tied to `GEMINI_API_KEY`, and add prepay
+credits / attach a billing method to the Generative Language API. Once that's done, no
+redeploy is needed to pick it up — `GEMINI_TEXT_MODEL` already defaults to
+`gemini-3.6-flash` in `app/adapters/llm.py`.
+
+**Not the same failure as R1** — this is a billing gate on the cascade path, which has
+otherwise been end-to-end verified against the live API. R1 (MLLM tool-calling) remains
+separately unverified, and additionally this key's model list has no full speech-to-speech
+Live model available at all (only `gemini-3.5-transcribe-live`, which is transcription-only)
+— so MLLM mode cannot even be spiked on this account regardless of billing.
+
+---
+
 ## R2 — The reuse rule — RESOLVED (1 Sep 2026)
 
 **Status:** resolved. Organisers confirmed offline that reusing Akaash's own prior

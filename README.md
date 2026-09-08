@@ -27,7 +27,7 @@ transferred into a void, and never gets told a confident lie.
 | HTTP/WebSocket service layer + cascade LLM orchestrator | Done — [docs/09-deployment.md](docs/09-deployment.md) |
 | Public repo, Docker, live deployment | Done — see **Live demo** below |
 | Real-time voice call browser client ([/call](https://shopwave-ps5-855952895014.asia-south1.run.app/call)) | Done — caller + human-agent roles, escalation, human-approved override |
-| Real Agora/Gemini credentials wired in | Pending — the one thing blocking an actual live voice demo |
+| Real Agora/Gemini credentials wired in | Done — Agora agent joins and runs live end-to-end; blocked only on Gemini API billing credits (see R8) |
 
 ## Live demo
 
@@ -71,8 +71,10 @@ online once `AGORA_*` and `GEMINI_API_KEY` are set — see [docs/09-deployment.m
 
 ## Known limitations
 
-- **Voice hasn't been demoed live yet.** Everything is built and deployed, but real Agora/Gemini
-  credentials haven't been wired in — see the Status table above.
+- **Voice hasn't been demoed with a real spoken reply yet.** Agora credentials are live —
+  `POST /calls/start` returns a real, `RUNNING` Conversational AI agent — but the Gemini API
+  key backing the cascade LLM has no usable model without prepay billing credits (R8). Add
+  credits at https://ai.studio/projects and no further code change is needed.
 - **MLLM tool-calling (R1) is unverified** against the live Agora API; cascade mode is the
   deployed default and doesn't need it.
 - **No persistent database.** Orders/customers/products are in-memory JSON, reset on
