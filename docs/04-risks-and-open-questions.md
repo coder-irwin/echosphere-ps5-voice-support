@@ -109,6 +109,32 @@ solo late-night iteration against a nondeterministic model.
 
 ---
 
+## R10 — Vertex AI's default per-project rate limit is low and untested under real load
+
+**Status (9 Sep 2026):** open, not yet sized.
+
+**Severity:** medium — could turn into a live-demo failure if unaddressed.
+
+Discovered during a burst of back-to-back regression testing right after R8/R9 were fixed:
+`gemini-2.5-flash` on Vertex AI returned `429 RESOURCE_EXHAUSTED` under sustained rapid
+requests. Newly-enabled Vertex AI projects get a low default per-minute quota for
+`generateContent`, separate from the project's Cloud Run/Cloud Build billing being fine.
+One caller talking at a normal pace is unlikely to hit it, but the 5–6 Sep online
+evaluation and the 12 Sep finale could involve rapid rehearsal, multiple judges hitting the
+service back to back, or a nervous team re-testing right before going live — any of which
+could reproduce this.
+
+**Action:** before the live evaluation, check current quota and request an increase if it
+looks tight — GCP Console → IAM & Admin → Quotas, filter for
+`generate_content_requests_per_minute_per_project_per_base_model` in `us-central1` for
+`gemini-2.5-flash`. Small increases for standard Gemini models are usually approved
+quickly, but leave a buffer of at least a day before 4/5 Sep in case it isn't instant.
+`GeminiClient`'s retry/backoff behavior on 429 has not been built — right now it just
+surfaces the graceful fallback ("having trouble reaching my systems") and moves on, which
+is safe but not resilient to a burst.
+
+---
+
 ## R2 — The reuse rule — RESOLVED (1 Sep 2026)
 
 **Status:** resolved. Organisers confirmed offline that reusing Akaash's own prior
